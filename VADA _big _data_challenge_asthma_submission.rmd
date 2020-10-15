@@ -1,0 +1,346 @@
+---
+title: "VADA big data challenge"
+author: "rishabh saraf"
+date: "July 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#import related libraries
+library(tidyverse)
+library(broom)
+library(here)
+library(pROC)
+library(plotROC)
+
+```
+
+```{r}
+#reading the data from the csv file
+data_all <- read.csv("final_vada.csv")
+```
+
+```{r}
+#select rows of interest
+predictor_list <- c("RIAGENDR","RIDAGEYR", "HSQ500", "MCQ300B", "MCQ160D", "MCQ160G", "MCQ160K", "BMXBMI", "CDQ001", "CDQ002", "CDQ003", "CDQ008", "CDQ010", "PAQ635", "PAQ65", "RIDRETH3")
+
+data <- subset(data_all,select= c(RIAGENDR,RIDAGEYR, HSQ500, MCQ300B, MCQ160D, MCQ160G, MCQ160K, BMXBMI, CDQ001, CDQ002, CDQ003, CDQ008, CDQ010, PAQ635, PAQ650, RIDRETH3, SEQN, MCQ010 ))
+outcome_var <- "MCQ010"
+
+colnames(data)[1]<-"Gender"
+colnames(data)[2]<-"age"
+colnames(data)[3]<-"head_or_chest_cold"
+colnames(data)[4]<-"close_relative_had_asthma"
+colnames(data)[5]<-"angina_pectoris"
+colnames(data)[6]<-"emphysema"
+colnames(data)[7]<-"chronic_bronchitis"
+colnames(data)[8]<-"BMI"
+colnames(data)[9]<-"pain_in_chest"
+colnames(data)[10]<-"walking_uphill_or_in_a_hurry"
+colnames(data)[11]<-"ordinary_pace_on_level_ground"
+colnames(data)[12]<-"pain_in_chest_for_more_than_half_hour"
+colnames(data)[13]<-"stairs_or_inclines"
+colnames(data)[14]<-"walk_or_bicycle"
+colnames(data)[15]<-"gym_or_schoolsports"
+colnames(data)[16]<-"race"
+colnames(data)[17]<-"patient_number"
+colnames(data)[18]<-"have_asthma"
+
+
+
+#######  clean the data   #######  
+
+#remove NA valued rows of the outcome
+
+row_to_keep<-apply(data,1,function(X){!is.na(X["have_asthma"])})
+cleaned_data <- data[row_to_keep,]
+dim(data)
+dim(cleaned_data)
+row_to_keep<-apply(data,1,function(X){!is.na(X["BMI"])})
+cleaned_data <- data[row_to_keep,]
+dim(cleaned_data)
+
+cleaned_data <- cleaned_data[cleaned_data["have_asthma"]!=7,] # removing refused
+cleaned_data <- cleaned_data[cleaned_data["have_asthma"]!=9,] # removing Don't know 
+
+dim(cleaned_data)
+
+
+# convert outcome to binary 
+#for(i in (1:ncol(cleaned_data)))
+#{
+#cleaned_data[i][!is.na(cleaned_data[i]),]<-ifelse(cleaned_data[i][!is.na(cleaned_data[i]),] #== 1,0,1)
+#}
+
+
+```
+
+```{r}
+c<-cleaned_data
+glimpse(c)
+```
+
+```{r}
+sel<-subset(c,select = c(head_or_chest_cold:chronic_bronchitis,pain_in_chest:gym_or_schoolsports,have_asthma))
+
+for(i in names(sel)){
+  c[[i]]<-ifelse(c[[i]]==1,1,0)
+  c[[i]]<-ifelse(is.na(c[[i]]),0,c[[i]])
+  c[[i]]<-as.integer(c[[i]])
+}
+glimpse(c)
+#c[["close_relative_had_asthma"]]<-ifelse(c[["close_relative_had_asthma"]]==2,1,0)
+#c[["close_relative_had_asthma"]]<-ifelse(is.na(c[["close_relative_had_asthma"]]),0,c[["close_relative_had_asthma"]])
+#c[["pain_in_chest"]]<-ifelse(c[["pain_in_chest"]]==2,1,0)
+#c[["pain_in_chest"]]<-ifelse(is.na(c[["pain_in_chest"]]),0,c[["pain_in_chest"]])
+#c[["angina_pectoris"]]<-ifelse((c[["angina_pectoris"]]==2),1,0)
+#c[["angina_pectoris"]]<-ifelse(is.na(c[["angina_pectoris"]]),0,c[["angina_pectoris"]])
+#c[["emphysema"]]<-ifelse((c[["emphysema"]]==2),1,0)
+#c[["emphysema"]]<-ifelse(is.na(c[["emphysema"]]),0,c[["emphysema"]])
+#c[["chronic_bronchitis"]]<-ifelse((c[["chronic_bronchitis"]]==2),1,0)
+#c[["chronic_bronchitis"]]<-ifelse(is.na(c[["chronic_bronchitis"]]),0,c[["chronic_bronchitis"]])
+#c[[""]]<-ifelse((c[["chronic_bronchitis"]]==2),1,0)
+#c[["chronic_bronchitis"]]<-ifelse(is.na(c[["chronic_bronchitis"]]),0,c[["chronic_bronchitis"]])
+
+
+#for(i in 3:7){
+#  c[[i]]<-as.factor(c[[i]])
+#}
+#for(i in 9:15){
+#  c[[i]]<-as.factor(c[[i]])
+#}
+#glimpse(c)
+
+
+```
+
+
+```{r}
+#training set
+set.seed(123)
+training_sample <- c %>% sample_frac(0.30) %>% pull(patient_number)
+
+train <- c %>% filter(patient_number %in% training_sample)
+```
+
+```{r}
+fit_race<-glm(have_asthma~race,family = binomial,data = train)
+summary(fit_race)
+```
+
+
+```{r}
+## ----fit_age_1-----------------------------------------------------------
+fit_age <- glm(have_asthma ~ age, family = "binomial", data = train)
+summary(fit_age)
+
+## ----fit_age_2-----------------------------------------------------------
+anova(fit_age, test = "LRT")
+
+```
+
+
+```{r}
+fit_gender <- glm(have_asthma ~ Gender, family = "binomial", data = train)
+summary(fit_gender)
+coef_gender <- tidy(fit_gender); coef_gender
+p_gender <- anova(fit_gender, test = "LRT")[["Pr(>Chi)"]][2]; p_gender
+```
+
+```{r}
+fit_head<-glm(have_asthma~head_or_chest_cold,family = binomial,data = train)
+summary(fit_head)
+```
+
+
+```{r}
+fit_bmi<-glm(have_asthma~BMI,family = binomial,data = train)
+summary(fit_bmi)
+```
+
+
+```{r}
+#1st predictor
+fit_closerelatives<-glm(have_asthma~close_relative_had_asthma,family = binomial,data = train)
+summary(fit_closerelatives)
+```
+
+```{r}
+fit_angina<-glm(have_asthma~angina_pectoris,family = binomial,data = train)
+summary(fit_angina)
+```
+
+```{r}
+fit_emphysema<-glm(have_asthma~emphysema,family = binomial,data = train)
+summary(fit_emphysema)
+```
+
+```{r}
+#2nd predictor
+fit_paininchest<-glm(have_asthma~pain_in_chest,family = binomial,data = train)
+summary(fit_paininchest)
+```
+
+```{r}
+fit_stairs<-glm(have_asthma~stairs_or_inclines,family = binomial,data = train)
+summary(fit_stairs)
+
+```
+
+```{r}
+fit_uphill<-glm(have_asthma~walking_uphill_or_in_a_hurry,family = binomial,data = train)
+summary(fit_uphill)
+```
+
+```{r}
+fit_ordinarypace<-glm(have_asthma~ordinary_pace_on_level_ground,family = binomial,data = train)
+summary(fit_ordinarypace)
+```
+
+```{r}
+fit_chest<-glm(have_asthma~pain_in_chest_for_more_than_half_hour,family = binomial,data = train)
+summary(fit_chest)
+```
+
+```{r}
+fit_walk<-glm(have_asthma~walk_or_bicycle,family = binomial,data = train)
+summary(fit_walk)
+```
+```{r}
+fit_gym<-glm(have_asthma~gym_or_schoolsports,family = binomial,data = train)
+summary(fit_gym)
+```
+
+
+```{r}
+#forward 1
+
+fit_train_0 <- glm(have_asthma ~ 1, train, family = "binomial")
+
+#add1(fit_train_0, ~ close_relative_had_asthma + emphysema + chronic_bronchitis + BMI + pain_in_chest + stairs_or_inclines  + walking_uphill_or_in_a_hurry )
+
+fit_train_fwd <- step(fit_train_0, 
+  . ~ (close_relative_had_asthma + emphysema + chronic_bronchitis + BMI + pain_in_chest + stairs_or_inclines  + walking_uphill_or_in_a_hurry), 
+  direction = "forward")
+```
+
+```{r}
+anova(fit_train_fwd)
+```
+
+```{r}
+fit_train_full<-glm(have_asthma~close_relative_had_asthma + emphysema + chronic_bronchitis + BMI + pain_in_chest + stairs_or_inclines  + walking_uphill_or_in_a_hurry,family = binomial,data = train)
+
+fit_train_back<-  step(fit_train_full, direction = "backward")
+```
+
+```{r}
+fit_train_sw<-step(fit_train_0, 
+  . ~ (close_relative_had_asthma + emphysema + chronic_bronchitis + BMI + pain_in_chest + stairs_or_inclines  + walking_uphill_or_in_a_hurry + race + age + Gender + ordinary_pace_on_level_ground + gym_or_schoolsports + head_or_chest_cold + pain_in_chest_for_more_than_half_hour), 
+  direction = "both")
+```
+
+```{r}
+fit_train_sw1<-step(fit_train_0, 
+  . ~ (close_relative_had_asthma + emphysema + chronic_bronchitis + BMI + pain_in_chest + stairs_or_inclines  + walking_uphill_or_in_a_hurry + race + age + Gender + ordinary_pace_on_level_ground + gym_or_schoolsports + head_or_chest_cold + pain_in_chest_for_more_than_half_hour)^2, 
+  direction = "both")
+```
+
+
+```{r}
+fit_train_main <- glm(have_asthma ~ close_relative_had_asthma + chronic_bronchitis + 
+    stairs_or_inclines + age + BMI, data = train)
+augment(fit_train_main) %>% mutate(Asthma = c("No", "Yes")[have_asthma + 1]) %>%
+  ggplot(aes(x = .fitted, fill = Asthma)) + geom_density(alpha = 0.2)
+```
+
+```{r}
+perf_09 <- augment(fit_train_main) %>% 
+  mutate(pred_asthma = if_else(.fitted < 0.15, 0,1)) %$%
+  table(pred_asthma, have_asthma)
+perf_09 %>% addmargins(1:2)
+```
+
+
+```{r}
+fit_train_fwd <- step(fit_train_0, 
+ . ~ (close_relative_had_asthma + chronic_bronchitis + 
+    stairs_or_inclines + age + BMI), 
+  direction = "forward")
+
+predict_all<-predict(fit_train_fwd,type = "response")
+model<-rep("F",times = nrow(train))
+all_table<-data.frame(train$have_asthma, predicted_values=predict_all,model)
+
+#rocs
+roc_all<-roc(train$have_asthma,predict_all,ci=TRUE)
+roc_all
+
+r1<-ggplot(all_table, aes(d=train.have_asthma, m=predicted_values, colour=model)) + geom_roc(labelround = 4, n.cuts=0)  +  labs(y="Sensitivity", x="1-Specificity")
+
+auc1<-round(calc_auc(r1)$AUC, 4)
+
+library(pROC)
+roc_obj <- roc(train$have_asthma, predict_all)
+auc(roc_obj)
+
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities), 
+  labels=roc_obj$response, 
+  scores=roc_obj$predictor)
+
+#roc <- r1 + annotate("text",  x=0.60, y = 0.25, label=paste("AUC main effects: ", 
+ #                                                          auc1[3], ", 95% CI = #0.6020-0.6163"))
+#roc
+
+roc_plot_train_fwd <- fit_train_fwd %>%
+  augment(type.predict = "response")%>%ggplot() + geom_roc(aes(d = have_asthma, m = .fitted), n.cuts = 11, labelround = 2) +
+  style_roc(xlab = "1 - spec", ylab = "sens"); roc_plot_train_fwd + annotate("text",     x = 0.75, y = 0.2, label = str_c("AUC=", round(calc_auc(roc_plot_train_fwd)$AUC, 2)))
+```
+
+```{r}
+roc_plot_train_fwd <- fit_train_fwd %>%
+  augment(type.predict = "response")%>%ggplot() + geom_roc(aes(d = have_asthma, m = .fitted), n.cuts = 11, labelround = 2) +
+  style_roc(xlab = "1 - spec", ylab = "sens"); roc_plot_train_fwd + annotate("text",     x = 0.75, y = 0.2, label = str_c("AUC=", round(calc_auc(roc_plot_train_fwd)$AUC, 2)))
+```
+
+```{r}
+predicted<-data.frame(train$have_asthma,predict_all)
+roc<-calculate_roc(predicted,1,2,n=nrow(train))
+plot_roc(roc,0.15,1,2)
+
+```
+```{r}
+ggplot() + geom_roc(aes(d = readmit_30, m = .fitted), n.cuts = 11, labelround = 2) +
+  style_roc(xlab = "1 - spec", ylab = "sens"); roc_plot_train_fwd + annotate("text", 
+    x = 0.75, y = 0.2, label = str_c("AUC=", round(calc_auc(roc_plot_train_fwd)$AUC, 2)))
+```
+
+
+
+```{r}
+test <- c %>% filter(not(patient_number %in% training_sample))
+roc_data_test <- test %>% select(patient_number, have_asthma) %>%
+  mutate(fit_train_full = predict(fit_train_full, test, type = "response"),
+    fit_train_main = predict(fit_train_main, test, type = "response"),
+    fit_train_fwd = predict(fit_train_fwd, test, type = "response"))
+```
+
+```{r}
+roc_plot_test_fwd <- bind_rows(
+  roc_data_test %>% select(have_asthma, fit_train_fwd) %>% mutate(dataset = "test"),
+  roc_data_train %>% select(have_asthma, fit_train_fwd) %>% mutate(dataset = "train")) %>%
+  ggplot() + 
+  geom_roc(aes(d = have_asthma, m = fit_train_fwd), n.cuts = 0) +
+  style_roc(xlab = "1 - spec", ylab = "sens")
+
+roc_plot_test_fwd + annotate("text", 
+    x = 0.75, y = c(0.2, 0.15), label = str_c("AUC=", 
+      round(calc_auc(roc_plot_test_fwd)$AUC, 2)), colour = c("#F8766D", "#00BFC4"))
+```
+
